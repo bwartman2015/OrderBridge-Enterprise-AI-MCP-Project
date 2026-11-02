@@ -5,6 +5,9 @@
 #   docker compose down -v      stop AND wipe the database (re-seeds on next start)
 #
 # Values come from .env (copy .env.example first).
+#
+# Ports are bound to 127.0.0.1, so only this computer can reach them. Redpanda and
+# Redpanda Console have no login, and this keeps them off shared Wi-Fi networks.
 
 name: orderbridge
 
@@ -17,7 +20,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (cp .env.example .env)}
       POSTGRES_DB: ${POSTGRES_DB:-orderbridge}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Files in this folder run once, in name order, the first time the volume is created.
@@ -47,10 +50,10 @@ services:
       - --smp 1
       - --default-log-level=warn
     ports:
-      - "19092:19092"
-      - "18081:18081"
-      - "18082:18082"
-      - "19644:9644"
+      - "127.0.0.1:19092:19092"
+      - "127.0.0.1:18081:18081"
+      - "127.0.0.1:18082:18082"
+      - "127.0.0.1:19644:9644"
     volumes:
       - redpanda:/var/lib/redpanda/data
     healthcheck:
@@ -86,7 +89,7 @@ services:
             enabled: true
             urls: ["http://redpanda:9644"]
     ports:
-      - "${REDPANDA_CONSOLE_PORT:-8080}:8080"
+      - "127.0.0.1:${REDPANDA_CONSOLE_PORT:-8080}:8080"
     depends_on:
       redpanda:
         condition: service_healthy
