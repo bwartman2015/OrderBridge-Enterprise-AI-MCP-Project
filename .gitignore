@@ -19,3 +19,6 @@ edi/error/*
 .DS_Store
 .vscode/
 .idea/
+
+# Private notes kept on this computer only (never published)
+private/
