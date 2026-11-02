@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Secrets: never commit the real .env (commit .env.example instead)
+.env
+
+# Runtime EDI files (folders are kept via .gitkeep)
+edi/inbound/*
+edi/outbound/*
+edi/processed/*
+edi/error/*
+!edi/*/.gitkeep
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrderBridge Live</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #6b7385; --line: #e3e6ec;
+    --accent: #2f5bd3; --ok: #1f8a4c; --warn: #b7791f; --bad: #c53030; --info: #2b6cb0;
+    --ok-bg: #e6f4ec; --warn-bg: #fdf3e1; --bad-bg: #fdeaea; --info-bg: #e8f0fb; --neutral-bg: #eef0f4;
+    --flash: #fff6c7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --panel: #1b1f29; --text: #e6e8ee; --muted: #9aa2b4; --line: #2b3140;
+      --accent: #7c9cf0; --ok: #5fcf8f; --warn: #f0b54a; --bad: #f07a7a; --info: #7fb2f0;
+      --ok-bg: #1d3328; --warn-bg: #3a2f1a; --bad-bg: #3d2224; --info-bg: #1e2c40; --neutral-bg: #262b37;
+      --flash: #3d3818;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 18px 24px 8px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header .sub { color: var(--muted); }
+  header .live { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 6px; }
+  .dot.down { background: var(--bad); }
+  main { padding: 8px 24px 32px; display: grid; gap: 16px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi.alert .value { color: var(--bad); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  section h2 { margin: 0; padding: 12px 14px; font-size: 14px; border-bottom: 1px solid var(--line);
+               display: flex; justify-content: space-between; }
+  section h2 small { color: var(--muted); font-weight: 400; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.wrap { white-space: normal; min-width: 220px; }
+  tr:last-child td { border-bottom: 0; }
+  tr.flash td { background: var(--flash); transition: background 2s; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .s-RECEIVED, .s-PENDING { background: var(--neutral-bg); color: var(--muted); }
+  .s-ACKNOWLEDGED, .s-OPEN { background: var(--info-bg); color: var(--info); }
+  .s-ALLOCATED { background: var(--warn-bg); color: var(--warn); }
+  .s-SHIPPED, .s-OK, .s-APPROVED, .s-RECEIVED-PO { background: var(--ok-bg); color: var(--ok); }
+  .s-CANCELLED, .s-DENIED, .s-REJECTED { background: var(--bad-bg); color: var(--bad); }
+  .s-ERROR { background: var(--warn-bg); color: var(--warn); }
+  .bar { position: relative; height: 8px; width: 120px; background: var(--neutral-bg); border-radius: 4px; }
+  .bar span { position: absolute; inset: 0 auto 0 0; background: var(--bad); border-radius: 4px; }
+  .empty { padding: 14px; color: var(--muted); }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  @media (max-width: 520px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>OrderBridge</h1>
+  <span class="sub">Live operations: orders, stock, approvals and audit</span>
+  <span class="live"><span id="dot" class="dot"></span><span id="updated">connecting…</span> ·
+    <a href="/docs">API docs</a></span>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid">
+    <section><h2>Recent orders <small>newest first</small></h2><div class="scroll" id="orders"></div></section>
+    <section><h2>Pending approvals <small>AI proposes, humans approve</small></h2><div class="scroll" id="approvals"></div></section>
+    <section><h2>Low stock <small>available ≤ reorder point</small></h2><div class="scroll" id="lowstock"></div></section>
+    <section><h2>Purchase orders <small>created only by human approval</small></h2><div class="scroll" id="pos"></div></section>
+  </div>
+  <section><h2>Audit log <small>every MCP tool call, API write, EDI file and approval</small></h2><div class="scroll" id="audit"></div></section>
+</main>
+<script>
+  const REFRESH_MS = 3000;
+  const seen = { orders: new Set(), approvals: new Set(), audit: new Set(), pos: new Set() };
+  let firstLoad = true;
+
+  // Escape everything we insert: audit entries can contain text the AI supplied.
+  function esc(value) {
+    return String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  const badge = (s, extra = "") => `<span class="badge s-${esc(s)}${extra}">${esc(s)}</span>`;
+  const time = iso => iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+  const date = iso => iso ? iso.slice(0, 10) : "—";
+  const money = n => "$" + Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function table(target, key, headers, rows, idOf, render, emptyText) {
+    const el = document.getElementById(target);
+    if (!rows.length) { el.innerHTML = `<div class="empty">${esc(emptyText)}</div>`; return; }
+    const body = rows.map(r => {
+      const id = idOf(r);
+      const isNew = !firstLoad && !seen[key]?.has(id);
+      seen[key]?.add(id);
+      return `<tr class="${isNew ? "flash" : ""}">${render(r)}</tr>`;
+    }).join("");
+    el.innerHTML = `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function render(d) {
+    const c = d.status_counts || {};
+    const kpis = [
+      ["Received", (c.RECEIVED || 0) + (c.ACKNOWLEDGED || 0)],
+      ["At risk (≤2 days)", d.at_risk_count, d.at_risk_count > 0],
+      ["Allocated", c.ALLOCATED || 0],
+      ["Shipped", c.SHIPPED || 0],
+      ["Low-stock SKUs", d.low_stock.length, d.low_stock.length > 0],
+      ["Pending approvals", d.pending_approvals.length],
+      ["Outbox backlog", d.outbox.unpublished, d.outbox.unpublished > 0],
+    ];
+    document.getElementById("kpis").innerHTML = kpis.map(([label, value, alert]) =>
+      `<div class="kpi ${alert ? "alert" : ""}"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`).join("");
+
+    table("orders", "orders", ["PO", "Partner", "Status", "Ship date", "Lines", "Qty"], d.recent_orders,
+      o => o.id + o.status,
+      o => `<td>${esc(o.po_number)}</td><td>${esc(o.partner_code)}</td><td>${badge(o.status)}</td>
+            <td>${date(o.requested_ship_date)}</td><td class="num">${o.line_count}</td><td class="num">${o.total_qty}</td>`,
+      "No orders yet.");
+
+    table("approvals", "approvals", ["#", "SKU", "Qty", "Est. cost", "Proposed by", "Reason"], d.pending_approvals,
+      p => p.id,
+      p => `<td>${p.id}</td><td>${esc(p.sku)}</td><td class="num">${p.qty}</td><td class="num">${money(p.estimated_cost)}</td>
+            <td>${esc(p.proposed_by)}</td><td class="wrap">${esc(p.reason)}</td>`,
+      "Nothing waiting. Run scripts/approve.py after the AI proposes something.");
+
+    table("lowstock", null, ["SKU", "Available", "Reorder pt", "", "Pending", "Open PO"], d.low_stock,
+      s => s.sku,
+      s => {
+        const pct = Math.max(4, Math.min(100, Math.round(100 * s.available / Math.max(1, s.reorder_point))));
+        return `<td>${esc(s.sku)}</td><td class="num">${s.available}</td><td class="num">${s.reorder_point}</td>
+                <td><div class="bar"><span style="width:${pct}%"></span></div></td>
+                <td class="num">${s.pending_replenishment_qty || ""}</td><td class="num">${s.open_purchase_order_qty || ""}</td>`;
+      },
+      "All SKUs are above their reorder point.");
+
+    table("pos", "pos", ["PO", "SKU", "Qty", "Cost", "Approved by", "Status", "Expected"], d.purchase_orders,
+      p => p.id,
+      p => `<td>${esc(p.po_number)}</td><td>${esc(p.sku)}</td><td class="num">${p.qty}</td><td class="num">${money(p.total_cost)}</td>
+            <td>${esc(p.approved_by)}</td><td>${badge(p.status, p.status === "RECEIVED" ? " s-RECEIVED-PO" : "")}</td><td>${date(p.expected_date)}</td>`,
+      "No purchase orders yet.");
+
+    table("audit", "audit", ["Time", "Actor", "Role", "Tool / endpoint", "Result", "Arguments", "Detail"], d.audit,
+      a => a.id,
+      a => `<td>${time(a.timestamp)}</td><td>${esc(a.actor)}</td><td>${esc(a.role)}</td><td>${esc(a.tool_or_endpoint)}</td>
+            <td>${badge(a.result)}</td><td class="wrap muted">${esc(JSON.stringify(a.arguments))}</td><td class="wrap">${esc(a.detail)}</td>`,
+      "No audit entries yet.");
+    firstLoad = false;
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch("/dashboard/data", { cache: "no-store" });
+      if (!res.ok) throw new Error(res.status);
+      render(await res.json());
+      document.getElementById("dot").className = "dot";
+      document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    } catch (e) {
+      document.getElementById("dot").className = "dot down";
+      document.getElementById("updated").textContent = "API unreachable, retrying…";
+    } finally {
+      setTimeout(refresh, REFRESH_MS);
+    }
+  }
+  refresh();
+</script>
+</body>
+</html>

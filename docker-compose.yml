@@ -1,0 +1,96 @@
+# OrderBridge infrastructure: one command to start everything.
+#   docker compose up -d        start
+#   docker compose ps           check health
+#   docker compose down         stop (data kept)
+#   docker compose down -v      stop AND wipe the database (re-seeds on next start)
+#
+# Values come from .env (copy .env.example first).
+
+name: orderbridge
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: orderbridge-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env (cp .env.example .env)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (cp .env.example .env)}
+      POSTGRES_DB: ${POSTGRES_DB:-orderbridge}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Files in this folder run once, in name order, the first time the volume is created.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    container_name: orderbridge-redpanda
+    command:
+      - redpanda
+      - start
+      # "internal" listener is for other containers, "external" is for your Mac (localhost:19092)
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"
+      - "18081:18081"
+      - "18082:18082"
+      - "19644:9644"
+    volumes:
+      - redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Creates the three topics once Redpanda is healthy, then exits.
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    container_name: orderbridge-redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - rpk topic create orders inventory approvals --brokers redpanda:9092 -p 1 -r 1 || true
+    restart: "no"
+
+  console:
+    image: docker.redpanda.com/redpandadata/console:v2.7.2
+    container_name: orderbridge-console
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "${REDPANDA_CONSOLE_PORT:-8080}:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redpanda:
