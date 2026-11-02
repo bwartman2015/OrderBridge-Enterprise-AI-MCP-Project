@@ -53,7 +53,7 @@ The full diagram, event catalogue and control-by-control rationale are in
 | Tool | Notes |
 |---|---|
 | Docker with Compose v2 | Runs Postgres, Redpanda and Redpanda Console. See the macOS 12 note below. |
-| Python 3.11 or newer | This Mac's `.venv` uses Python 3.12. See the macOS 12 note below. |
+| Python 3.11 or newer | Python 3.12 is recommended. See the macOS 12 note below. |
 | Node.js | Only for the optional MCP Inspector (`npx`). |
 | Claude Code | The AI agent used for the demo. |
 
@@ -71,16 +71,17 @@ uv python install 3.12        # or install Python 3.12 from python.org
 ## Run it in 5 minutes
 
 ```bash
-cd ~/OrderBridge-Enterprise-AI-MCP-Project
+git clone https://github.com/bwartman2015/OrderBridge-Enterprise-AI-MCP-Project.git
+cd OrderBridge-Enterprise-AI-MCP-Project
 
-# 1. Settings (already done on this machine; .env is git-ignored)
+# 1. Settings: copy the template, then change POSTGRES_PASSWORD (.env is git-ignored)
 cp -n .env.example .env
 
 # 2. Infrastructure: Postgres + Redpanda + Redpanda Console
 docker compose up -d
 docker compose ps            # wait until postgres and redpanda show "healthy"
 
-# 3. Python environment (already done on this machine)
+# 3. Python environment
 python3.12 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 # 4. Start the API, EDI watcher and outbox publisher together (Ctrl+C stops all three)
@@ -181,12 +182,11 @@ Delivery is at least once, so each event carries an `event_id` for consumers to 
 
 ### Phase 5: MCP server, the centrepiece
 
-Register the server with Claude Code. Run this once, from any folder:
+Register the server with Claude Code. Run this once, from the project folder, so that
+`$(pwd)` fills in the full path to the project's Python. Keep the command on one line.
 
 ```bash
-claude mcp add orderbridge --scope user \
-  --env MCP_ACTOR=brad --env MCP_ROLE=planner \
-  -- /Users/bradwartman/OrderBridge-Enterprise-AI-MCP-Project/.venv/bin/python -m orderbridge.mcp_server
+claude mcp add orderbridge --scope user --env MCP_ACTOR=brad --env MCP_ROLE=planner -- "$(pwd)/.venv/bin/python" -m orderbridge.mcp_server
 claude mcp list          # orderbridge should show as connected
 ```
 
@@ -217,7 +217,7 @@ In the Inspector, connect with these settings, then open the Tools tab and call 
 | Setting | Value |
 |---|---|
 | Transport | STDIO |
-| Command | `/Users/bradwartman/OrderBridge-Enterprise-AI-MCP-Project/.venv/bin/python` |
+| Command | The full path to `.venv/bin/python`. Print it with `echo "$(pwd)/.venv/bin/python"` from the project folder. |
 | Arguments | `-m orderbridge.mcp_server` |
 | Environment | `MCP_ACTOR=brad`, `MCP_ROLE=planner` (try `viewer` to see denials) |
 
@@ -251,13 +251,14 @@ Keep the dashboard and `watch_events.py` visible while you run these.
 4. "What's low on stock? Propose replenishment for anything that would block an at-risk order."
    Claude proposes TENT-2P-ULT and tells you a human must approve it.
 5. Switch to read-only and reconnect:
+   Run these from the project folder, each on one line:
    ```bash
    claude mcp remove orderbridge --scope user
-   claude mcp add orderbridge --scope user --env MCP_ACTOR=brad --env MCP_ROLE=viewer \
-     -- /Users/bradwartman/OrderBridge-Enterprise-AI-MCP-Project/.venv/bin/python -m orderbridge.mcp_server
+   claude mcp add orderbridge --scope user --env MCP_ACTOR=brad --env MCP_ROLE=viewer -- "$(pwd)/.venv/bin/python" -m orderbridge.mcp_server
    ```
-   Start a new Claude Code session and ask it to propose a replenishment. It is denied, and
-   "Show me the audit log" shows the DENIED entry. Switch back to `planner` the same way.
+   Start a new Claude Code session and ask it to propose replenishment for a SKU with no
+   pending proposal, such as FUEL-230. It is denied, and "Show me the audit log" shows the
+   DENIED entry. Switch back to `planner` the same way.
 6. Run `scripts/approve.py`, approve the proposal, and watch the approval events and the new
    purchase order appear in the event stream and on the dashboard.
 
