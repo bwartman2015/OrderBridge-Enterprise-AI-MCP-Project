@@ -22,3 +22,6 @@ edi/error/*
 
 # Private notes kept on this computer only (never published)
 private/
+
+# Claude Code project instructions (local only)
+CLAUDE.md
